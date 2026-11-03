@@ -1,0 +1,717 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Lumen Drift</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Instrument+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one fixed WebGL world behind four full-height scroll scenes; copy sits in alternating left/right panels, fading in and out with scroll. */
+:root {
+  --void: #02030a;
+  --ink: #e8f6ff;
+  --mute: #8696b4;
+  --cyan: #19e6ff;
+  --violet: #8a4dff;
+  --line: rgba(150, 190, 255, 0.16);
+  --f-display: 'Syne', 'Arial Black', system-ui, sans-serif;
+  --f-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: dark;
+}
+html { background: var(--void); }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+  -webkit-touch-callout: none;
+}
+.no-gl body {
+  background:
+    radial-gradient(60% 50% at 30% 30%, rgba(25, 230, 255, 0.22), transparent 70%),
+    radial-gradient(50% 50% at 75% 70%, rgba(138, 77, 255, 0.28), transparent 70%),
+    var(--void);
+}
+
+#gl, #trail { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#gl { z-index: 0; }
+#trail { z-index: 1; pointer-events: none; }
+
+.prog {
+  position: fixed; z-index: 6; left: 0; right: 0; top: env(safe-area-inset-top, 0px);
+  height: 2px; transform-origin: 0 50%; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--cyan), var(--violet));
+  pointer-events: none;
+}
+.bar {
+  position: fixed; z-index: 5; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 14px max(16px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+}
+.mark {
+  font: 800 0.95rem/1 var(--f-display); letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink); background: none; border: 0; padding: 8px 0; cursor: pointer; pointer-events: auto;
+}
+.mark:focus-visible, .go:focus-visible { outline: 2px solid var(--violet); outline-offset: 4px; }
+.scene {
+  font: 400 0.72rem/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--mute); text-align: right; white-space: nowrap;
+}
+.scene b { color: var(--ink); font-weight: 500; }
+
+.tele {
+  position: fixed; z-index: 5; left: 0; right: 0; bottom: 0;
+  display: flex; flex-wrap: wrap; gap: 8px 24px;
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  font: 400 0.68rem/1 var(--f-mono); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--mute); pointer-events: none;
+}
+.tele b { color: var(--cyan); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.toast {
+  position: fixed; z-index: 6; left: 50%; bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 8px); opacity: 0; transition: opacity 0.4s, transform 0.4s;
+  font: 500 0.74rem/1 var(--f-mono); letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink); border: 1px solid var(--line); background: rgba(2, 3, 10, 0.72);
+  padding: 12px 16px; pointer-events: none; white-space: nowrap;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+main { position: relative; z-index: 2; }
+.scene-sec {
+  min-height: 100vh; min-height: 100svh;
+  display: flex; align-items: center;
+  padding-block: 14vh;
+  box-sizing: border-box;
+}
+.panel {
+  width: 100%; max-width: 38rem; min-width: 0;
+  text-shadow: 0 0 28px rgba(2, 3, 10, 0.95), 0 0 5px rgba(2, 3, 10, 0.8);
+}
+.panel.wide { max-width: 62rem; }
+.panel.r { margin-left: auto; }
+
+.eyebrow {
+  margin: 0 0 18px; font: 400 0.74rem/1.5 var(--f-mono);
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--cyan);
+}
+.eyebrow b { font-weight: 500; font-variant-numeric: tabular-nums; }
+h1, h2 {
+  margin: 0; font-family: var(--f-display); font-weight: 800;
+  letter-spacing: -0.02em; line-height: 0.95; text-wrap: balance;
+}
+h1 { font-size: clamp(2.6rem, 10.5vw, 9rem); }
+h2 { font-size: clamp(2rem, 6.4vw, 4.6rem); }
+.w { display: inline-block; white-space: nowrap; }
+.ch {
+  display: inline-block;
+  animation: rise 0.95s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 55ms + 200ms);
+  text-shadow: 0 0 38px rgba(138, 77, 255, 0.8), 0 0 3px rgba(25, 230, 255, 0.5);
+}
+.w.hl .ch { color: var(--cyan); }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(0.45em) scale(0.96); filter: blur(14px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+.lede { margin: 22px 0 0; max-width: 34rem; font-size: clamp(1rem, 1.4vw + 0.6rem, 1.25rem); color: #c4d3ea; }
+.keys {
+  list-style: none; margin: 30px 0 0; padding: 16px 0 0; max-width: 36rem;
+  display: flex; flex-wrap: wrap; gap: 10px 28px; border-top: 1px solid var(--line);
+  font: 400 0.72rem/1.4 var(--f-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute);
+}
+.keys b { color: var(--ink); font-weight: 500; margin-right: 0.5em; }
+
+.go {
+  position: relative; margin-top: 34px; display: inline-flex; align-items: center; gap: 14px;
+  font: 500 0.8rem/1 var(--f-mono); letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink); background: rgba(25, 230, 255, 0.06); border: 1px solid var(--cyan);
+  padding: 18px 26px; cursor: pointer; text-shadow: none;
+  box-shadow: 0 0 28px rgba(25, 230, 255, 0.25), inset 0 0 22px rgba(25, 230, 255, 0.12);
+  transition: background 0.25s;
+}
+.go::after {
+  content: ""; position: absolute; inset: -1px; border: 1px solid var(--cyan);
+  animation: ping 2.4s ease-out infinite; pointer-events: none;
+}
+.go:hover { background: rgba(25, 230, 255, 0.18); }
+.go.alt { border-color: var(--violet); background: rgba(138, 77, 255, 0.08); box-shadow: 0 0 28px rgba(138, 77, 255, 0.3), inset 0 0 22px rgba(138, 77, 255, 0.14); }
+.go.alt::after { border-color: var(--violet); }
+.go.alt:hover { background: rgba(138, 77, 255, 0.2); }
+@keyframes ping {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.35, 1.9); opacity: 0; }
+}
+.whisper { margin: 28px 0 0; font: 400 0.72rem/1.5 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); }
+
+@media (max-width: 520px) {
+  .scene .full { display: none; }
+  .tele .opt { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ch { animation: none; }
+  .go::after { animation: none; opacity: 0; }
+  .toast { transition: none; }
+}
+</style>
+
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="trail" aria-hidden="true"></canvas>
+<div class="prog" id="prog"></div>
+
+<header class="bar">
+  <button class="mark" id="mark" type="button">Lumen Drift</button>
+  <div class="scene"><b id="sn">01</b> / 04 <span class="full">· <span id="sname">Spiral</span></span></div>
+</header>
+
+<main>
+  <section class="scene-sec" id="spiral">
+    <div class="panel wide">
+      <p class="eyebrow">A live particle world · <b data-count>120,000</b> points · one shader</p>
+      <h1 id="hero">Fall into the light.</h1>
+      <p class="lede">Light that notices you. Every point is drawn by your graphics chip, so it stays fast on a laptop and on a phone.</p>
+      <ul class="keys">
+        <li><b>Move or drag</b>parts the light</li>
+        <li><b>Hold</b>pulls it in</li>
+        <li><b>Tap or click</b>shockwave</li>
+        <li><b>Scroll</b>travel</li>
+      </ul>
+      <button class="go" id="begin" type="button">Begin the drift <span aria-hidden="true">↓</span></button>
+    </div>
+  </section>
+
+  <section class="scene-sec" id="tunnel">
+    <div class="panel r">
+      <p class="eyebrow">Scene 02 · Tunnel</p>
+      <h2>Everything rushes toward you.</h2>
+      <p class="lede">Scrolling flies you through a ring of <b data-count>120,000</b> points. Each one is placed by a few lines of shader math on your graphics chip, so the page stays one small file and keeps its frame rate.</p>
+    </div>
+  </section>
+
+  <section class="scene-sec" id="ink">
+    <div class="panel">
+      <p class="eyebrow">Scene 03 · Ink</p>
+      <h2>Light that behaves like liquid.</h2>
+      <p class="lede">Drag across the surface and the field ripples around you. Tap or click anywhere to send a shockwave through every point.</p>
+    </div>
+  </section>
+
+  <section class="scene-sec" id="orb">
+    <div class="panel r">
+      <p class="eyebrow">Scene 04 · Orb</p>
+      <h2>Hold the whole thing.</h2>
+      <p class="lede">Press and hold anywhere and the light spirals into your hand. Let go and it blooms back out.</p>
+      <button class="go alt" id="again" type="button">Return to start <span aria-hidden="true">↑</span></button>
+      <p class="whisper">Some words wake it up. Try typing one.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="tele">
+  <span>Points <b id="t-count">0</b></span>
+  <span>Fps <b id="t-fps">0</b></span>
+  <span class="opt">Frame <b id="t-ms">0.0</b> ms</span>
+  <span>Depth <b id="t-depth">0</b> ly</span>
+</footer>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (matchMedia('(pointer: coarse)').matches && innerWidth < 900);
+
+  /* ---------- headline: split into letters ---------- */
+  (function () {
+    var h1 = $('#hero');
+    var words = h1.textContent.trim().split(' ');
+    var n = 0;
+    h1.setAttribute('aria-label', words.join(' '));
+    h1.textContent = '';
+    words.forEach(function (w, wi) {
+      var ws = document.createElement('span');
+      ws.className = 'w' + (wi === words.length - 1 ? ' hl' : '');
+      ws.setAttribute('aria-hidden', 'true');
+      Array.from(w).forEach(function (c) {
+        var s = document.createElement('span');
+        s.className = 'ch';
+        s.style.setProperty('--i', n++);
+        s.textContent = c;
+        ws.appendChild(s);
+      });
+      h1.appendChild(ws);
+      if (wi < words.length - 1) h1.appendChild(document.createTextNode(' '));
+    });
+  })();
+
+  /* ---------- shaders ---------- */
+  var VERT = [
+    'precision highp float;',
+    'attribute vec4 a_seed;',
+    'uniform float u_time;',
+    'uniform float u_scroll;',
+    'uniform float u_travel;',
+    'uniform float u_aspect;',
+    'uniform float u_press;',
+    'uniform float u_hue;',
+    'uniform float u_size;',
+    'uniform vec2 u_res;',
+    'uniform vec2 u_mouse;',
+    'uniform vec4 u_pulse;',
+    'varying vec3 v_col;',
+    'varying float v_a;',
+    'const float PI = 3.14159265;',
+    'const float TAU = 6.2831853;',
+    'const float F = 1.7320508;',
+
+    'mat2 rot(float a) { float c = cos(a); float s = sin(a); return mat2(c, -s, s, c); }',
+
+    /* scene 0: spiral galaxy */
+    'vec3 galaxy(vec4 s, float t) {',
+    '  float r = pow(s.x, 0.65) * 10.0 + 0.2;',
+    '  float arm = floor(s.y * 3.0);',
+    '  float th = r * 0.55 + arm * 2.0944 + t * 0.12 / (0.6 + r * 0.25);',
+    '  th += (s.z - 0.5) * 0.9 / (0.4 + r * 0.15);',
+    '  float h = (s.w - 0.5) * 1.4 * exp(-r * 0.18);',
+    '  vec3 p = vec3(cos(th) * r, h, sin(th) * r);',
+    '  p.yz = rot(0.95) * p.yz;',
+    '  return p + vec3(0.0, -0.5, -17.0);',
+    '}',
+
+    /* scene 1: twisting tunnel, flown through by scroll */
+    'vec3 tunnel(vec4 s, float t) {',
+    '  float L = 70.0;',
+    '  float z = -mod(s.x * L + u_travel, L);',
+    '  float ang = s.y * TAU + z * 0.12 + t * 0.1;',
+    '  float rad = 3.2 + s.z * 2.6 + 0.5 * sin(z * 0.35 + t * 1.2 + s.y * 6.0);',
+    '  return vec3(cos(ang) * rad, sin(ang) * rad, z);',
+    '}',
+
+    /* scene 2: rippling water with rising ink */
+    'vec3 water(vec4 s, float t) {',
+    '  vec2 g = vec2(s.x - 0.5, s.y - 0.5) * vec2(30.0, 26.0);',
+    '  float d = length(g);',
+    '  float y = sin(g.x * 0.45 + t * 0.9) * cos(g.y * 0.38 - t * 0.7) * 1.1',
+    '          + sin(d * 1.4 - t * 2.0) * 0.45 * exp(-d * 0.08);',
+    '  vec3 p = vec3(g.x, y - 3.2, g.y - 14.0);',
+    '  float plume = step(0.86, s.w);',
+    '  float rise = pow(s.z, 1.8) * 9.0;',
+    '  p.y += plume * rise;',
+    '  p.x += plume * sin(rise * 0.9 + t + s.x * 20.0) * (0.3 + rise * 0.12);',
+    '  return p;',
+    '}',
+
+    /* scene 3: breathing orb with a ring */
+    'vec3 orb(vec4 s, float t) {',
+    '  float a = s.y * TAU + t * 0.25;',
+    '  if (s.w > 0.84) {',
+    '    float rr = 5.4 + s.z * 1.6;',
+    '    vec3 q = vec3(cos(a) * rr, (s.x - 0.5) * 0.25, sin(a) * rr);',
+    '    q.xy = rot(0.45) * q.xy;',
+    '    return q + vec3(0.0, 0.0, -11.0);',
+    '  }',
+    '  float u = s.x * 2.0 - 1.0;',
+    '  float k = sqrt(max(0.0, 1.0 - u * u));',
+    '  float rad = 3.4 + 0.35 * sin(u * 7.0 + t * 1.3 + a * 2.0) + s.z * 0.6;',
+    '  rad *= 1.0 + 0.05 * sin(t * 1.6);',
+    '  return vec3(cos(a) * k, u, sin(a) * k) * rad + vec3(0.0, 0.0, -11.0);',
+    '}',
+
+    'vec3 shape(int k, vec4 s, float t) {',
+    '  if (k == 0) return galaxy(s, t);',
+    '  if (k == 1) return tunnel(s, t);',
+    '  if (k == 2) return water(s, t);',
+    '  return orb(s, t);',
+    '}',
+
+    'float bias(int k) {',
+    '  if (k == 0) return 0.30;',
+    '  if (k == 1) return 0.55;',
+    '  if (k == 2) return 0.35;',
+    '  return 0.65;',
+    '}',
+
+    'void main() {',
+    '  float t = u_time;',
+    '  float sc = clamp(u_scroll, 0.0, 1.0) * 3.0;',
+    '  int i = int(min(floor(sc), 2.0));',
+    '  float f = sc - float(i);',
+    '  float stag = clamp(f * 1.7 - a_seed.w * 0.7, 0.0, 1.0);',
+    '  stag = stag * stag * (3.0 - 2.0 * stag);',
+    '  vec3 p = mix(shape(i, a_seed, t), shape(i + 1, a_seed, t), stag);',
+    '  p += (a_seed.xyz - 0.5) * vec3(10.0, 6.0, 10.0) * sin(PI * stag) * 0.9;',
+
+    '  vec3 v = p;',
+    '  v.xz = rot(u_mouse.x * 0.06) * v.xz;',
+    '  v.yz = rot(-u_mouse.y * 0.04) * v.yz;',
+
+    /* pointer: repel, or pull and swirl while pressed */
+    '  vec3 d = normalize(vec3(u_mouse.x * u_aspect / F, u_mouse.y / F, -1.0));',
+    '  float tt = max(dot(v, d), 0.01);',
+    '  vec3 off = v - d * tt;',
+    '  float dist = length(off);',
+    '  float R = 0.2 * tt;',
+    '  float fall = exp(-(dist * dist) / (R * R));',
+    '  vec3 dir = off / max(dist, 0.0001);',
+    '  v += dir * fall * R * 1.1 * (1.0 - u_press);',
+    '  v -= off * fall * 0.8 * u_press;',
+    '  v += cross(d, dir) * fall * R * 0.5 * u_press;',
+
+    /* shockwave */
+    '  float ring = 0.0;',
+    '  float age = t - u_pulse.z;',
+    '  if (u_pulse.w > 0.5 && age < 3.5) {',
+    '    vec2 sp = vec2(v.x * F / u_aspect, v.y * F) / max(-v.z, 0.1);',
+    '    vec2 dv = (sp - u_pulse.xy) * vec2(u_aspect, 1.0);',
+    '    float sd = length(dv);',
+    '    float e = (sd - age * 1.4) * 5.0;',
+    '    ring = exp(-e * e) * exp(-age * 1.1);',
+    '    vec2 rd = dv / max(sd, 0.0001);',
+    '    v.xy += rd * ring * 0.32 * (-v.z);',
+    '    v.z += ring * 2.0;',
+    '  }',
+
+    '  float depth = -v.z;',
+    '  if (depth < 0.15) {',
+    '    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);',
+    '    gl_PointSize = 0.0;',
+    '    v_a = 0.0;',
+    '    v_col = vec3(0.0);',
+    '    return;',
+    '  }',
+    '  gl_Position = vec4(v.x * F / u_aspect, v.y * F, 0.0, depth);',
+
+    '  float base = u_size * (0.55 + a_seed.w * a_seed.w * 1.6);',
+    '  float ps = base * u_res.y * 0.5 * F / depth;',
+    '  ps *= 1.0 + fall * 0.8 + ring * 2.0;',
+    '  gl_PointSize = clamp(ps, 1.0, 40.0);',
+
+    '  vec3 cy = vec3(0.10, 0.90, 1.00);',
+    '  vec3 vi = vec3(0.55, 0.30, 1.00);',
+    '  vec3 hot = vec3(0.92, 0.96, 1.00);',
+    '  float vb = mix(bias(i), bias(i + 1), stag);',
+    '  float m = smoothstep(0.0, 1.0, a_seed.z * 0.7 + vb * 0.6 - 0.1);',
+    '  vec3 col = mix(cy, vi, abs(m - u_hue));',
+    '  col = mix(col, hot, clamp(fall * 0.6 + ring * 0.8, 0.0, 1.0));',
+    '  v_col = col;',
+
+    '  float fog = 1.0 - smoothstep(26.0, 74.0, depth);',
+    '  float nearF = smoothstep(0.15, 1.5, depth);',
+    '  v_a = (0.42 + 0.7 * fall + 1.0 * ring) * fog * nearF * (0.35 + 0.65 * clamp(ps / 1.6, 0.0, 1.0));',
+    '}'
+  ].join('\n');
+
+  var FRAG = [
+    'precision mediump float;',
+    'varying vec3 v_col;',
+    'varying float v_a;',
+    'void main() {',
+    '  vec2 c = gl_PointCoord - 0.5;',
+    '  float d = dot(c, c) * 4.0;',
+    '  if (d > 1.0) discard;',
+    '  float a = exp(-d * 4.5) * v_a;',
+    '  gl_FragColor = vec4(v_col * a, a);',
+    '}'
+  ].join('\n');
+
+  /* ---------- WebGL setup ---------- */
+  var canvas = $('#gl');
+  var gl = canvas.getContext('webgl', { alpha: false, antialias: false, powerPreference: 'high-performance' });
+  var U = {};
+  var hasGL = false;
+  var MAX = mobile ? 60000 : 160000;
+  var count = mobile ? 50000 : ((navigator.hardwareConcurrency || 8) <= 4 ? 80000 : 120000);
+  var resW = 1, resH = 1;
+  var seeds = new Float32Array(MAX * 4);
+  for (var q = 0; q < seeds.length; q++) seeds[q] = Math.random();
+
+  function compile(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+
+  function initGL() {
+    if (!gl) return false;
+    var vs = compile(gl.VERTEX_SHADER, VERT);
+    var fs = compile(gl.FRAGMENT_SHADER, FRAG);
+    if (!vs || !fs) return false;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(prog));
+      return false;
+    }
+    gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'a_seed');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 0, 0);
+    ['u_time', 'u_scroll', 'u_travel', 'u_aspect', 'u_press', 'u_hue', 'u_size', 'u_res', 'u_mouse', 'u_pulse']
+      .forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.clearColor(0.008, 0.012, 0.04, 1);
+    return true;
+  }
+
+  hasGL = initGL();
+  if (!hasGL) {
+    document.documentElement.classList.add('no-gl');
+    canvas.style.display = 'none';
+  }
+  var lost = false;
+  canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); lost = true; });
+  canvas.addEventListener('webglcontextrestored', function () { hasGL = initGL(); lost = !hasGL; resize(true); });
+
+  /* ---------- trail canvas ---------- */
+  var tc = $('#trail');
+  var tctx = tc.getContext('2d');
+  var sprite = document.createElement('canvas');
+  sprite.width = sprite.height = 64;
+  (function () {
+    var g = sprite.getContext('2d');
+    var gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(225,250,255,1)');
+    gr.addColorStop(0.18, 'rgba(25,230,255,0.85)');
+    gr.addColorStop(0.5, 'rgba(138,77,255,0.35)');
+    gr.addColorStop(1, 'rgba(138,77,255,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+  })();
+  var trail = [];
+  var lastX = null, lastY = null;
+  function addTrail(x, y, now) {
+    if (reduce) return;
+    if (lastX !== null) {
+      var dx = x - lastX, dy = y - lastY;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var steps = Math.min(8, Math.floor(dist / 14));
+      for (var k = 1; k <= steps; k++) trail.push({ x: lastX + dx * k / (steps + 1), y: lastY + dy * k / (steps + 1), t: now });
+    }
+    trail.push({ x: x, y: y, t: now });
+    lastX = x; lastY = y;
+    if (trail.length > 70) trail.splice(0, trail.length - 70);
+  }
+  function drawTrail(now) {
+    tctx.clearRect(0, 0, tc.width, tc.height);
+    if (!trail.length) return;
+    tctx.globalCompositeOperation = 'lighter';
+    var keep = [];
+    for (var k = 0; k < trail.length; k++) {
+      var p = trail[k];
+      var age = (now - p.t) / 800;
+      if (age >= 1) continue;
+      var life = 1 - age;
+      var size = 8 + life * 34;
+      tctx.globalAlpha = life * 0.8;
+      tctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);
+      keep.push(p);
+    }
+    tctx.globalAlpha = 1;
+    trail = keep;
+  }
+
+  /* ---------- sizing ---------- */
+  var lastW = 0, lastH = 0;
+  function resize(force) {
+    if (!force && innerWidth === lastW && Math.abs(innerHeight - lastH) < 150) return;
+    lastW = innerWidth; lastH = innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.75 : 2);
+    resW = Math.max(1, Math.floor(innerWidth * dpr));
+    resH = Math.max(1, Math.floor(innerHeight * dpr));
+    if (hasGL) {
+      canvas.width = resW;
+      canvas.height = resH;
+      gl.viewport(0, 0, resW, resH);
+    }
+    tc.width = innerWidth;
+    tc.height = innerHeight;
+  }
+  resize(true);
+  addEventListener('resize', function () { resize(false); });
+
+  /* ---------- input ---------- */
+  var tx = 2, ty = 2, mx = 2, my = 2;
+  var lastMove = -1e9;
+  var pressT = 0, press = 0;
+  var hueT = 0, hue = 0;
+  var pulse = [0, 0, -99, 0];
+  var time = 0;
+
+  function ndc(x, y) { return [x / innerWidth * 2 - 1, 1 - y / innerHeight * 2]; }
+  function setPointer(x, y) {
+    var p = ndc(x, y);
+    tx = p[0]; ty = p[1];
+    lastMove = performance.now();
+    addTrail(x, y, lastMove);
+  }
+  addEventListener('pointermove', function (e) { setPointer(e.clientX, e.clientY); }, { passive: true });
+  addEventListener('touchmove', function (e) { if (e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  addEventListener('touchstart', function (e) { if (e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  addEventListener('pointerdown', function (e) {
+    if (e.target.closest && e.target.closest('button, a')) return;
+    setPointer(e.clientX, e.clientY);
+    var p = ndc(e.clientX, e.clientY);
+    pulse = [p[0], p[1], time, 1];
+    pressT = 1;
+  });
+  function release() { pressT = 0; }
+  addEventListener('pointerup', release);
+  addEventListener('pointercancel', release);
+  addEventListener('blur', release);
+  document.addEventListener('pointerleave', function () { lastX = null; lastY = null; });
+
+  var toastTimer = 0;
+  function toast(msg) {
+    var el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2200);
+  }
+  function flip() {
+    hueT = hueT ? 0 : 1;
+    pulse = [0, 0, time, 1];
+    toast(hueT ? 'Spectrum flipped' : 'Spectrum restored');
+  }
+  var keyBuf = '';
+  addEventListener('keydown', function (e) {
+    if (!e.key || e.key.length !== 1) return;
+    keyBuf = (keyBuf + e.key.toLowerCase()).slice(-5);
+    if (keyBuf === 'drift') { keyBuf = ''; flip(); }
+  });
+  var taps = 0, tapTimer = 0;
+  $('#mark').addEventListener('click', function () {
+    taps++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(function () { taps = 0; }, 900);
+    if (taps >= 3) { taps = 0; flip(); }
+  });
+
+  function goTo(y) { scrollTo({ top: y, behavior: reduce ? 'auto' : 'smooth' }); }
+  $('#begin').addEventListener('click', function () { $('#tunnel').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); });
+  $('#again').addEventListener('click', function () { goTo(0); });
+
+  /* ---------- UI updates ---------- */
+  var sections = Array.prototype.slice.call(document.querySelectorAll('.scene-sec'));
+  var counters = Array.prototype.slice.call(document.querySelectorAll('[data-count]'));
+  var names = ['Spiral', 'Tunnel', 'Ink', 'Orb'];
+  var elSn = $('#sn'), elName = $('#sname'), elProg = $('#prog');
+  var tCount = $('#t-count'), tFps = $('#t-fps'), tMs = $('#t-ms'), tDepth = $('#t-depth');
+  var lastScene = -1;
+
+  function fmt(n) { return n.toLocaleString('en-US'); }
+  function setCount() {
+    var s = fmt(count);
+    counters.forEach(function (c) { c.textContent = s; });
+    tCount.textContent = s;
+  }
+  setCount();
+  if (!hasGL) tCount.textContent = '0';
+
+  function updatePanels() {
+    var vh = innerHeight;
+    var rects = sections.map(function (s) { return s.getBoundingClientRect(); });
+    sections.forEach(function (s, k) {
+      var r = rects[k];
+      var mid = r.top + r.height / 2;
+      var d = Math.abs(mid - vh / 2) / vh;
+      var o = Math.max(0, Math.min(1, 1.5 - d * 2.7));
+      var panel = s.firstElementChild;
+      panel.style.opacity = o.toFixed(3);
+      panel.style.transform = reduce ? 'none' : 'translate3d(0,' + ((mid - vh / 2) * 0.06).toFixed(1) + 'px,0)';
+    });
+  }
+
+  /* ---------- main loop ---------- */
+  var last = performance.now();
+  var cur = 0;
+  var emaDt = 1 / 60;
+  var frames = 0, acc = 0, lastTele = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.05, Math.max(0.0001, (now - last) / 1000));
+    last = now;
+    time += dt * (reduce ? 0.25 : 1);
+    emaDt += (dt - emaDt) * 0.05;
+
+    var max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    var tgt = Math.min(1, Math.max(0, scrollY / max));
+    cur += (tgt - cur) * (reduce ? 1 : 1 - Math.exp(-dt * 5));
+
+    var idle = !reduce && (now - lastMove) > 3500;
+    if (idle) { tx = Math.sin(time * 0.5) * 0.55; ty = Math.cos(time * 0.37) * 0.35; }
+    var kk = 1 - Math.exp(-dt * 10);
+    mx += (tx - mx) * kk;
+    my += (ty - my) * kk;
+    press += (pressT - press) * (1 - Math.exp(-dt * 6));
+    hue += (hueT - hue) * (1 - Math.exp(-dt * 2.5));
+
+    var travel = time * 2.2 + cur * 140;
+
+    if (hasGL && !lost) {
+      gl.uniform1f(U.u_time, time);
+      gl.uniform1f(U.u_scroll, cur);
+      gl.uniform1f(U.u_travel, travel);
+      gl.uniform1f(U.u_aspect, resW / resH);
+      gl.uniform1f(U.u_press, press);
+      gl.uniform1f(U.u_hue, hue);
+      gl.uniform1f(U.u_size, 0.05);
+      gl.uniform2f(U.u_res, resW, resH);
+      gl.uniform2f(U.u_mouse, mx, my);
+      gl.uniform4f(U.u_pulse, pulse[0], pulse[1], pulse[2], pulse[3]);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.POINTS, 0, count);
+
+      /* adaptive quality: shed points if frames run slow */
+      frames++; acc += dt;
+      if (frames >= 60) {
+        var avg = acc / frames;
+        if (avg > 0.024 && count > 24000) { count = Math.floor(count * 0.78); setCount(); }
+        frames = 0; acc = 0;
+      }
+    }
+
+    drawTrail(now);
+    updatePanels();
+
+    var scene = Math.max(0, Math.min(3, Math.round(cur * 3)));
+    if (scene !== lastScene) {
+      lastScene = scene;
+      elSn.textContent = '0' + (scene + 1);
+      elName.textContent = names[scene];
+    }
+    elProg.style.transform = 'scaleX(' + cur.toFixed(4) + ')';
+
+    if (now - lastTele > 500) {
+      lastTele = now;
+      tFps.textContent = Math.round(1 / emaDt);
+      tMs.textContent = (emaDt * 1000).toFixed(1);
+      tDepth.textContent = fmt(Math.round(travel * 9.4));
+    }
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
